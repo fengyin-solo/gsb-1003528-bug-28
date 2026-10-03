@@ -1,9 +1,17 @@
 import { MODULE_BY_KEY } from '@/data/modules'
 import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
+import {
+  COMPILATION_KEY,
+  listCompilation,
+  startCompilation,
+  submitForReview,
+} from './compilation-workflow'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
 // 会写进数据的「往回走」动作：命中就把这条记录标成异常态，看板上能一眼看出来。
 const NEGATIVE_ACTIONS = ['撤销', '作废', '拒绝', '驳回', '停用', '忽略', '下线', '回滚']
+
+const DEFAULT_OPERATOR = '值班管理员'
 
 export function moduleMeta(key: string): ModuleMeta {
   const meta = MODULE_BY_KEY.get(key)
@@ -24,11 +32,36 @@ export function filterRows(rows: EntryRow[], filters: Record<string, string>): E
 }
 
 export function listEntries(key: string, filters: Record<string, string> = {}): PageResult {
-  const matched = filterRows(listRows(key), filters)
+  // 整编成果统一经过 presentRow：修正待办脏标记、补齐已刊印记录的审核时间/包号/复核意见。
+  const source = key === COMPILATION_KEY ? listCompilation() : listRows(key)
+  const matched = filterRows(source, filters)
   return { items: matched, total: matched.length, page: 1, size: matched.length }
 }
 
-export function runAction(key: string, id: number, action: string): ActionResult {
+export function runAction(
+  key: string,
+  id: number,
+  action: string,
+  operator: string = DEFAULT_OPERATOR,
+): ActionResult {
+  // 整编成果走专属工作流：源状态受守卫保护，已刊印终态既不能驳回也不能重复刊印。
+  if (key === COMPILATION_KEY) {
+    try {
+      if (action === '开始整编') {
+        startCompilation(id, operator)
+      } else if (action === '提交审核') {
+        submitForReview(id, operator)
+      } else if (action === '驳回整编' || action === '复核刊印') {
+        return { ok: false, message: `「${action}」请在成果复核入口处理，并填写复核意见` }
+      } else {
+        return { ok: false, message: `整编成果没有登记「${action}」这个动作` }
+      }
+      return { ok: true, message: `整编成果已${action}` }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : '整编操作失败' }
+    }
+  }
+
   const meta = moduleMeta(key)
   const target = meta.actionTargets[action]
   if (!target) {
@@ -61,12 +94,23 @@ export function resetModule(key: string): PageResult {
   return listEntries(key)
 }
 
+function csvCell(value: unknown): string {
+  const text = value === undefined || value === null ? '' : String(value)
+  // 复核意见里可能带逗号、引号、换行，不做转义会把清单列冲散。
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`
+  }
+  return text
+}
+
 export function exportEntries(key: string): { filename: string; content: string } {
   const meta = moduleMeta(key)
   const header = ['编号', ...meta.fields, '当前状态']
-  const lines = [header.join(',')]
-  for (const row of listRows(key)) {
-    lines.push([row.id, ...meta.fields.map((field) => row[field] ?? ''), row.status].join(','))
+  const lines = [header.map(csvCell).join(',')]
+  // 整编清单与列表同一取数口径：已刊印记录的复核意见、审核时间、刊印包号都来自刊印结果。
+  const rows = key === COMPILATION_KEY ? listCompilation() : listRows(key)
+  for (const row of rows) {
+    lines.push([row.id, ...meta.fields.map((field) => csvCell(row[field] ?? '')), csvCell(row.status)].join(','))
   }
   return { filename: `${meta.name}-清单.csv`, content: `\uFEFF${lines.join('\n')}` }
 }
@@ -87,12 +131,12 @@ export function downloadEntries(key: string): void {
 export function loadOverview(): OverviewResult {
   const rows = allRows()
   const modules = [...MODULE_BY_KEY.values()].map((meta) => {
-    const entries = rows[meta.key] ?? []
+    const source = meta.key === COMPILATION_KEY ? listCompilation() : rows[meta.key] ?? []
     return {
       name: meta.name,
-      created: entries.length,
-      pending: entries.filter((row) => row.pending).length,
-      abnormal: entries.filter((row) => row.abnormal).length,
+      created: source.length,
+      pending: source.filter((row) => row.pending).length,
+      abnormal: source.filter((row) => row.abnormal).length,
     }
   })
   const cards = [

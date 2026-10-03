@@ -24,6 +24,43 @@
       </span>
     </p>
 
+    <section class="print-todo">
+      <h3>整编刊印结果待办</h3>
+      <p class="page-desc">站房维护依据整编刊印结果安排；此处只读取已刊印成果（含历史已刊印记录），按站点与年份取最新刊印包。</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>刊印包号</th>
+            <th>成果编号</th>
+            <th>站点编号</th>
+            <th>整编年份</th>
+            <th>整编类型</th>
+            <th>审核人</th>
+            <th>审核时间</th>
+            <th>来源</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="pkg in printTodos" :key="pkg.packageNo">
+            <td>{{ pkg.packageNo }}</td>
+            <td>{{ pkg.resultCode }}</td>
+            <td>{{ pkg.stationCode }}</td>
+            <td>{{ pkg.year }}</td>
+            <td>{{ pkg.category }}</td>
+            <td>{{ pkg.reviewer || '—' }}</td>
+            <td>{{ pkg.reviewedAt || '—' }}</td>
+            <td>
+              <span v-if="pkg.legacy" class="tag tag-legacy">历史刊印</span>
+              <span v-else class="tag tag-fresh">本次刊印</span>
+            </td>
+          </tr>
+          <tr v-if="!printTodos.length">
+            <td colspan="8" class="empty-state">暂无已刊印成果</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -79,7 +116,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
-import type { EntryRow } from '@/data/types'
+import { stationhousePrintTodos } from '@/api/compilation-workflow'
+import type { EntryRow, PrintPackage } from '@/data/types'
 
 const meta = moduleMeta('stationhouse')
 const columns = ["记录编号", "站点编号", "维护类型", "维护内容", "维护单位", "维护日期", "费用支出", "维护状态"]
@@ -92,6 +130,8 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+// 其它入口（站房）的待办读取刊印结果；刊印后重新进入页面即可看到最新包。
+const printTodos = ref<PrintPackage[]>([])
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -128,6 +168,7 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    printTodos.value = stationhousePrintTodos()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '站房维护列表读取失败'
   }
