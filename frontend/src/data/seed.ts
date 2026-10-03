@@ -342,7 +342,7 @@ export const SEED_ROWS: Record<string, EntryRow[]> = {
     {
       "id": 3,
       "status": "待审核",
-      "pending": false,
+      "pending": true,
       "abnormal": false,
       "成果编号": "COMP-0003",
       "整编年份": "数据整编样例3",

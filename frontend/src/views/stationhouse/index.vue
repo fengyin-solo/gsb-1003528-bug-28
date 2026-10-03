@@ -24,6 +24,42 @@
       </span>
     </p>
 
+    <!-- 站房待办直接读取整编刊印结果：按站点关联刊印包，包到了才安排后续维护。 -->
+    <section class="publication-panel">
+      <h3>整编刊印待办（来自数据整编刊印结果，共 {{ publications.length }} 份）</h3>
+      <div class="publication-filter">
+        <label>
+          <span>按站点编号检索</span>
+          <input v-model="stationKeyword" placeholder="如 STAT-0001" />
+        </label>
+      </div>
+      <table v-if="filteredPublications.length" class="data-table">
+        <thead>
+          <tr>
+            <th>刊印编号</th>
+            <th>成果编号</th>
+            <th>站点编号</th>
+            <th>整编类型</th>
+            <th>审核人</th>
+            <th>复核意见</th>
+            <th>刊印时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="pkg in filteredPublications" :key="pkg.刊印编号">
+            <td>{{ pkg.刊印编号 }}</td>
+            <td>{{ pkg.成果编号 }}</td>
+            <td>{{ pkg.站点编号 }}</td>
+            <td>{{ pkg.整编类型 }}</td>
+            <td>{{ pkg.审核人 }}</td>
+            <td>{{ pkg.复核意见 }}</td>
+            <td>{{ pkg.刊印时间 }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty-inline">暂无匹配的刊印结果，整编成果审核通过并刊印后会出现在这里</p>
+    </section>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -79,7 +115,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
-import type { EntryRow } from '@/data/types'
+import { publicationsByStation, listPublicationPackages } from '@/data/compilation-service'
+import type { EntryRow, PublicationPackage } from '@/data/types'
 
 const meta = moduleMeta('stationhouse')
 const columns = ["记录编号", "站点编号", "维护类型", "维护内容", "维护单位", "维护日期", "费用支出", "维护状态"]
@@ -92,6 +129,14 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+// 站房待办只认刊印包：空关键词时展示全部已刊印成果，输入站点后按站点过滤。
+const stationKeyword = ref('')
+const publications = ref<PublicationPackage[]>([])
+const filteredPublications = computed(() =>
+  stationKeyword.value.trim()
+    ? publicationsByStation(stationKeyword.value)
+    : publications.value,
+)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -128,6 +173,7 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    publications.value = listPublicationPackages()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '站房维护列表读取失败'
   }
@@ -135,3 +181,28 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.publication-panel {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color, #d8dee8);
+  border-radius: 8px;
+  background: #fafbfd;
+}
+.publication-panel h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.publication-filter {
+  margin-bottom: 8px;
+}
+.publication-filter input {
+  min-width: 220px;
+  padding: 6px 8px;
+}
+.empty-inline {
+  color: #8a93a2;
+  font-size: 13px;
+}
+</style>
